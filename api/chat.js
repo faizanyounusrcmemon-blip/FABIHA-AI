@@ -1,8 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 function json(res, status, body) {
   res.status(status).setHeader("Content-Type", "application/json");
   return res.end(JSON.stringify(body));
@@ -18,8 +16,9 @@ export default async function handler(req, res) {
     return json(res, 405, { error: "Method not allowed" });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    return json(res, 500, { error: "GEMINI_API_KEY is not configured." });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return json(res, 500, { error: "GEMINI_API_KEY is not configured on Vercel." });
   }
 
   const token = getBearer(req);
@@ -48,21 +47,22 @@ export default async function handler(req, res) {
     return json(res, 400, { error: "Messages are required." });
   }
 
-  // Gemini ke chat history format me convert karna
-  const contents = messages
-    .filter((m) => ["user", "assistant"].includes(m.role))
-    .slice(-20)
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: String(m.content || "") }]
-    }));
-
   try {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const contents = messages
+      .filter((m) => ["user", "assistant"].includes(m.role))
+      .slice(-20)
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: String(m.content || "") }]
+      }));
+
     const responseStream = await ai.models.generateContentStream({
       model: "gemini-2.5-flash",
       contents,
       config: {
-        systemInstruction: "You are a helpful, accurate AI assistant. Answer naturally. Use Markdown when useful."
+        systemInstruction: "You are a helpful AI assistant."
       }
     });
 
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
     res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
   } catch (error) {
-    console.error("GEMINI CHAT ERROR", error);
+    console.error("GEMINI API ERROR:", error);
     if (!res.headersSent) {
       return json(res, 500, { error: error?.message || "AI request failed." });
     }
