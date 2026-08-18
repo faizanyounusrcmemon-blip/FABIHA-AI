@@ -55,7 +55,7 @@ function Auth({ onUser }) {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="brand-mark">✦</div>
-        <h1>My AI Chat</h1>
+        <h1>Fabiha AI Chat</h1>
         <p className="muted">Your private AI workspace</p>
 
         <form onSubmit={submit}>
@@ -476,7 +476,7 @@ export default function App() {
                   sendMessage();
                 }
               }}
-              placeholder="Message My AI Chat…"
+              placeholder="Message Fabiha AI Chat…"
               rows={1}
             />
             <button className="composer-icon" onClick={startVoice} title="Voice input"><Icon name="mic" /></button>
