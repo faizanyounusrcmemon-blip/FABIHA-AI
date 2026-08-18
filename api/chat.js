@@ -1,9 +1,7 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 function json(res, status, body) {
   res.status(status).setHeader("Content-Type", "application/json");
@@ -15,35 +13,13 @@ function getBearer(req) {
   return header.startsWith("Bearer ") ? header.slice(7) : null;
 }
 
-function normalizeMessages(messages = []) {
-  return messages
-    .filter((m) => ["user", "assistant", "system"].includes(m.role))
-    .slice(-40)
-    .map((m) => {
-      if (m.image_data && m.role === "user") {
-        return {
-          role: "user",
-          content: [
-            { type: "input_text", text: String(m.content || "") },
-            { type: "input_image", image_url: m.image_data }
-          ]
-        };
-      }
-
-      return {
-        role: m.role,
-        content: String(m.content || "")
-      };
-    });
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return json(res, 405, { error: "Method not allowed" });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return json(res, 500, { error: "OPENAI_API_KEY is not configured." });
+  if (!process.env.GEMINI_API_KEY) {
+    return json(res, 500, { error: "GEMINI_API_KEY is not configured." });
   }
 
   const token = getBearer(req);
@@ -67,21 +43,27 @@ export default async function handler(req, res) {
     return json(res, 401, { error: "Invalid or expired session." });
   }
 
-  const { messages, model } = req.body || {};
+  const { messages } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return json(res, 400, { error: "Messages are required." });
   }
 
-  const input = normalizeMessages(messages);
-  const selectedModel = String(model || process.env.OPENAI_MODEL || "gpt-5.6");
+  // Gemini ke chat history format me convert karna
+  const contents = messages
+    .filter((m) => ["user", "assistant"].includes(m.role))
+    .slice(-20)
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: String(m.content || "") }]
+    }));
 
   try {
-    const stream = await openai.responses.create({
-      model: selectedModel,
-      input,
-      instructions:
-        "You are a helpful, accurate AI assistant. Answer naturally. Use Markdown when useful. Do not claim to have performed actions you did not perform.",
-      stream: true
+    const responseStream = await ai.models.generateContentStream({
+      model: "gemini-2.5-flash",
+      contents,
+      config: {
+        systemInstruction: "You are a helpful, accurate AI assistant. Answer naturally. Use Markdown when useful."
+      }
     });
 
     res.statusCode = 200;
@@ -90,27 +72,18 @@ export default async function handler(req, res) {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
-    for await (const event of stream) {
-      if (event.type === "response.output_text.delta") {
-        res.write(`data: ${JSON.stringify({ type: "delta", text: event.delta })}\n\n`);
-      }
-
-      if (event.type === "response.completed") {
-        res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
-      }
-
-      if (event.type === "error") {
-        res.write(`data: ${JSON.stringify({ type: "error", error: event.error?.message || "AI error" })}\n\n`);
+    for await (const chunk of responseStream) {
+      if (chunk.text) {
+        res.write(`data: ${JSON.stringify({ type: "delta", text: chunk.text })}\n\n`);
       }
     }
 
+    res.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
     res.end();
   } catch (error) {
-    console.error("OPENAI CHAT ERROR", error);
+    console.error("GEMINI CHAT ERROR", error);
     if (!res.headersSent) {
-      return json(res, 500, {
-        error: error?.message || "AI request failed."
-      });
+      return json(res, 500, { error: error?.message || "AI request failed." });
     }
     res.write(`data: ${JSON.stringify({ type: "error", error: error?.message || "AI request failed." })}\n\n`);
     res.end();
