@@ -58,13 +58,13 @@ export default async function handler(req, res) {
         parts: [{ text: String(m.content || "") }]
       }));
 
-const responseStream = await ai.models.generateContentStream({
-  model: "gemini-2.5-flash",
-  contents,
-  config: {
-    systemInstruction: "You are a helpful AI assistant."
-  }
-});
+    const responseStream = await ai.models.generateContentStream({
+      model: "gemini-3.6-flash",
+      contents,
+      config: {
+        systemInstruction: "You are a helpful AI assistant."
+      }
+    });
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
